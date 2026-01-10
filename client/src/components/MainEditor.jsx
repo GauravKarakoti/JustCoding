@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import CodeEditor from './CodeEditor';
-import { FaSun, FaMoon, FaPlay, FaPause, FaStepForward, FaStepBackward, FaRedo, FaEye, FaUndo, FaBug, FaFilePdf, FaSignOutAlt, FaLightbulb, FaCode, FaChevronDown, FaChevronUp, FaSave } from 'react-icons/fa';
+import { FaSun, FaMoon, FaPlay, FaPause, FaStepForward, FaStepBackward, FaRedo, FaEye, FaUndo, FaBug, FaFilePdf, FaLightbulb, FaCode, FaChevronDown, FaChevronUp, FaSave } from 'react-icons/fa';
 import { useTheme } from './ThemeContext';
 import Loader from './Loader';
 import '../Style/MainEdior.css';
@@ -11,6 +11,7 @@ import remarkGfm from "remark-gfm";
 import { addSnippet, incrementStat, touchLastActive } from '../services/localStore';
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { progressService } from '../services/progressService';
 
 const languages = {
 
@@ -145,6 +146,11 @@ if (isAdult) {
     localStorage.removeItem('question');
     localStorage.removeItem('explanation');
     try {
+      if (currentUser) {
+        progressService.recordEvent(currentUser.uid, 'ai_explain', {
+          language
+        });
+      }
       incrementStat('aiExplains', 1);
       const res = await fetchWithTimeout(`${API_BASE}/api/gpt/explain`, {
         method: 'POST',
@@ -171,6 +177,12 @@ if (isAdult) {
     setDebugLoading(true);
     localStorage.removeItem("debugHelp");
     try {
+      if (currentUser) {
+        progressService.recordEvent(currentUser.uid, 'ai_debug', {
+          language,
+          errorLength: output.length
+        });
+      }
       incrementStat('aiDebugs', 1);
       const res = await fetchWithTimeout(`${API_BASE}/api/gpt/debug`, {
         method: "POST",
@@ -205,6 +217,12 @@ if (isAdult) {
       setLoadingMessage("Server is starting up (free tier)... Please wait 30-60s");
     }, 3000);
     try {
+      if (currentUser) {
+        progressService.recordEvent(currentUser.uid, 'code_run', {
+          language,
+          codeLength: code.length
+        });
+      }
       incrementStat('runs', 1);
       const res = await fetchWithTimeout(`${API_BASE}/compile`, {
         method: "POST",
@@ -353,6 +371,11 @@ if (isAdult) {
     setVisualizerLoading(true);
 
     try {
+      if (currentUser) {
+        progressService.recordEvent(currentUser.uid, 'visualize', {
+          language
+        });
+      }
       incrementStat('visualizes', 1);
       const response = await fetch(`${API_BASE}/api/visualizer/visualize`, {
         method: 'POST',

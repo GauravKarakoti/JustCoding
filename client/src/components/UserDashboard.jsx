@@ -1,7 +1,8 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
-import { FaUser, FaCode, FaChartLine, FaFolder, FaUsers, FaHistory, FaPalette, FaCog, FaShare, FaCopy, FaEye, FaStar, FaBug, FaCheck, FaClock, FaCodeBranch, FaDatabase, FaServer, FaMobile, FaDesktop, FaGamepad, FaRobot, FaBrain, FaLightbulb, FaTerminal, FaNetworkWired, FaCloud, FaLock, FaUnlock, FaEyeSlash, FaUserFriends, FaUserPlus, FaGithub, FaLinkedin } from 'react-icons/fa';
+import { FaUser, FaCode, FaChartLine, FaFolder, FaUsers, FaCog, FaStar, FaBrain, FaTerminal } from 'react-icons/fa';
 import '../Style/UserDashboard.css';
+import { progressService } from '../services/progressService';
 import {
   addSnippet,
   deleteSnippet,
@@ -28,7 +29,8 @@ const UserDashboard = () => {
   });
   const [isEditing, setIsEditing] = useState(false);
   const [tempPhoto, setTempPhoto] = useState('');
-
+  const [dashboardData, setDashboardData] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [snippets, setSnippets] = useState([]);
   const [sessions, setSessions] = useState([]);
@@ -41,7 +43,6 @@ const UserDashboard = () => {
   const [newDescription, setNewDescription] = useState('');
 
   // Portfolio view state
-  const [portfolioView, setPortfolioView] = useState(false);
   const [portfolioUrl, setPortfolioUrl] = useState('');
 
   useEffect(() => {
@@ -65,12 +66,25 @@ const UserDashboard = () => {
     setPortfolioUrl(`${window.location.origin}/portfolio/${fallbackName}`);
   }, [currentUser]);
 
-  const refreshData = () => {
-    setSnippets(listSnippets());
-    setSessions(listSessions());
-    setStats(getStats());
-    // Initialize achievements based on stats
-    initializeAchievements();
+  const refreshData = async () => {
+    if (!currentUser?.uid) return;
+    
+    setLoading(true);
+    try {
+      const response = await progressService.getDashboard(currentUser.uid);
+      
+      if (response && response.success) {
+        setDashboardData(response.data);
+      }
+      setSnippets(listSnippets());
+      setSessions(listSessions());
+      setStats(getStats());
+      initializeAchievements();
+    } catch (error) {
+      console.error("Failed to load dashboard", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const initializeAchievements = () => {
@@ -97,8 +111,14 @@ const UserDashboard = () => {
   };
 
   useEffect(() => {
-    refreshData();
-  }, []);
+    if (currentUser) {
+      refreshData();
+    }
+  }, [currentUser]);
+
+  const getStatCount = (type) => {
+    return dashboardData?.eventStats?.[type]?.count || 0;
+  };
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -140,34 +160,6 @@ const UserDashboard = () => {
       console.error('Error updating profile:', error);
       alert('Error updating profile. Please try again.');
     }
-  };
-
-  const handleCancel = () => {
-    setIsEditing(false);
-    const local = getProfileLocal();
-    const fallbackName = currentUser?.displayName || currentUser?.email?.split('@')[0] || local.displayName || 'Guest';
-    const fallbackEmail = currentUser?.email || '';
-    const fallbackPhoto = local.photoURL || currentUser?.photoURL || '';
-
-    setTempPhoto(fallbackPhoto || '');
-    setProfile({
-      displayName: local.displayName || fallbackName,
-      email: fallbackEmail,
-      photoURL: fallbackPhoto,
-      bio: local.bio || '',
-      githubUrl: local.githubUrl || '',
-      linkedinUrl: local.linkedinUrl || '',
-      websiteUrl: local.websiteUrl || '',
-      twitterUrl: local.twitterUrl || '',
-      portfolioPublic: local.portfolioPublic !== undefined ? local.portfolioPublic : false,
-    });
-  };
-
-  const normalizeUrl = (value) => {
-    const v = String(value || '').trim();
-    if (!v) return '';
-    if (v.startsWith('http://') || v.startsWith('https://')) return v;
-    return `https://${v}`;
   };
 
   const identityLabel = useMemo(() => {
@@ -348,22 +340,18 @@ const UserDashboard = () => {
 
               <div className="overview-metrics">
                 <div className="metric-card primary">
-                  <div className="metric-icon">
-                    <FaCode />
-                  </div>
+                  <div className="metric-icon"><FaCode /></div>
                   <div className="metric-info">
-                    <div className="metric-value">{productivityMetrics.totalRuns}</div>
-                    <div className="metric-label">Code Executions</div>
+                    <div className="metric-value">{dashboardData?.user?.totalPoints || 0}</div>
+                    <div className="metric-label">Total Points (Lvl {dashboardData?.user?.level || 1})</div>
                   </div>
                 </div>
                 
                 <div className="metric-card secondary">
-                  <div className="metric-icon">
-                    <FaFolder />
-                  </div>
+                  <div className="metric-icon"><FaChartLine /></div>
                   <div className="metric-info">
-                    <div className="metric-value">{productivityMetrics.totalSnippets}</div>
-                    <div className="metric-label">Saved Snippets</div>
+                    <div className="metric-value">{dashboardData?.dailyStreak || 0}</div>
+                    <div className="metric-label">Day Streak 🔥</div>
                   </div>
                 </div>
                 
@@ -601,45 +589,21 @@ const UserDashboard = () => {
           {/* Achievements Tab */}
           {activeTab === 'achievements' && (
             <div className="dashboard-section">
-              <div className="section-header">
-                <h2>Achievements & Badges</h2>
-                <p>Earn recognition for your coding milestones and accomplishments.</p>
-              </div>
-
               <div className="achievements-grid">
-                {achievements.length === 0 ? (
-                  <div className="empty-state">
-                    <FaStar className="empty-icon" />
-                    <h3>No Achievements Yet</h3>
-                    <p>Start coding to earn your first badge!</p>
-                  </div>
+                {dashboardData?.badges?.length === 0 ? (
+                  <div className="empty-state">...</div>
                 ) : (
-                  achievements.map(ach => (
-                    <div key={ach.id} className="achievement-card">
-                      <div className="achievement-icon-large">
-                        {ach.icon}
-                      </div>
+                  dashboardData?.badges?.map(badge => (
+                    <div key={badge.badgeId} className={`achievement-card ${badge.rarity}`}>
+                      <div className="achievement-icon-large">{badge.icon}</div>
                       <div className="achievement-content">
-                        <h3>{ach.title}</h3>
-                        <p>{ach.description}</p>
-                        <span className="achievement-date">Earned {formatDate(ach.date)}</span>
+                        <h3>{badge.name}</h3>
+                        <p>{badge.description}</p>
+                        <span className="badge-rarity">{badge.rarity}</span>
                       </div>
                     </div>
                   ))
                 )}
-              </div>
-
-              <div className="progress-section">
-                <h3>Your Progress</h3>
-                <div className="progress-bar-container">
-                  <div className="progress-bar">
-                    <div 
-                      className="progress-fill" 
-                      style={{ width: `${Math.min(100, (achievements.length / 10) * 100)}%` }}
-                    ></div>
-                  </div>
-                  <span className="progress-text">{achievements.length} of 10 achievements unlocked</span>
-                </div>
               </div>
             </div>
           )}
